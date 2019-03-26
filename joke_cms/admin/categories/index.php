@@ -1,8 +1,21 @@
 <?php
 $docRoot = $_SERVER['DOCUMENT_ROOT'] . '/projects/joke_cms';
 include_once $docRoot . '/includes/db.inc.php';
+require_once $docRoot . '/includes/access.inc.php';
 //Display post array for testing only
 print_r($_POST);
+
+//Handle uer login, logout and role
+if (!userIsLoggedIn()) {
+    include '../../login.html.php';
+    exit(); 
+}
+if (!userHasRole('Site Administrator')) {
+    $error = 'Only Site Administrators may access this page.';
+    include '../../accessdenied.html.php';
+    exit();
+}
+
 /**
  * This section to handle DELETE action
  */

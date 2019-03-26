@@ -1,15 +1,41 @@
 <?php
 $docRoot = $_SERVER['DOCUMENT_ROOT'] . '/projects/joke_cms';
 include_once $docRoot . '/includes/db.inc.php';
+require_once $docRoot . '/includes/access.inc.php';
 //Display post array for testing only
 print_r($_POST);
+
+//Handle uer login, logout and role
+if (!userIsLoggedIn()) {
+    include '../../login.html.php';
+    exit(); 
+}
+if (!userHasRole('Account Administrator')) {
+    $error = 'Only Account Administrators may access this page.';
+    include '../../accessdenied.html.php';
+    exit();
+}
+
 /**
  * This section to handle DELETE action
  */
 if (isset($_POST['action']) and $_POST['action'] == 'Delete') {
+    // Delete role assignments for this author
+    try {
+        $sql = 'DELETE FROM authorrole WHERE authorid = :id';
+        $s = $pdo->prepare($sql);
+        $s->bindValue(':id', $_POST['id']);
+        $s->execute();
+    }
+    catch (PDOException $e) {
+        print "Error!: " . $e->getMessage() . "<br/>";
+        $error = 'Error removing author from roles.';
+        include_once $docRoot . '/error.html.php';
+        exit();
+    }
+
     // Get jokes belonging to author
-    try
-    {
+    try {
         $sql = 'SELECT id FROM joke WHERE authorid = :id';
         $s = $pdo->prepare($sql);
         $s->bindValue(':id', $_POST['id']);
@@ -60,6 +86,7 @@ if (isset($_POST['action']) and $_POST['action'] == 'Delete') {
         $s->bindValue(':id', $_POST['id']);
         $s->execute();
     } catch (PDOException $e) {
+        print "Error!: " . $e->getMessage() . "<br/>";
         $error = 'Error deleting author.';
         include_once $docRoot . '/error.html.php';
         exit();
@@ -78,6 +105,23 @@ if (isset($_GET['add'])) {
     $email = '';
     $id = '';
     $button = 'Add author';
+    // Build the list of roles
+    try {
+        $result = $pdo->query('SELECT id, description FROM role');
+    }
+    catch (PDOException $e) {
+        print "Error!: " . $e->getMessage() . "<br/>";
+        $error = 'Error fetching list of roles.';
+        include_once $docRoot . '/error.html.php';
+        exit();
+    }
+    foreach ($result as $row) {
+        $roles[] = array(
+        'id' => $row['id'],
+        'description' => $row['description'],
+        'selected' => FALSE);
+    }
+
     include 'form.html.php';
     exit();
 }
@@ -97,6 +141,47 @@ if (isset($_GET['addform'])) {
         $error = 'Error adding submitted author.';
         include_once $docRoot . '/error.html.php';
         exit();
+    }
+
+    $authorid = $pdo->lastInsertId();
+    if ($_POST['password'] != '')
+    {
+        $password = md5($_POST['password'] . 'ijdb');
+        try {
+            $sql = 'UPDATE author SET
+                password = :password
+                WHERE id = :id';
+            $s = $pdo->prepare($sql);
+            $s->bindValue(':password', $password);
+            $s->bindValue(':id', $authorid);
+            $s->execute();
+            }
+        catch (PDOException $e) {
+            print "Error!: " . $e->getMessage() . "<br/>";
+            $error = 'Error setting author password.';
+            include_once $docRoot . '/error.html.php';
+            exit();
+        } 
+    }
+    if (isset($_POST['roles']))
+    {
+        foreach ($_POST['roles'] as $role) {
+            try {
+                $sql = 'INSERT INTO authorrole SET
+                    authorid = :authorid,
+                    roleid = :roleid';
+                $s = $pdo->prepare($sql);
+                $s->bindValue(':authorid', $authorid);
+                $s->bindValue(':roleid', $role);
+                $s->execute();
+            }
+            catch (PDOException $e) {
+                print "Error!: " . $e->getMessage() . "<br/>";
+                $error = 'Error assigning selected role to author.';
+                include_once $docRoot . '/error.html.php';
+                exit();
+            } 
+        }
     }
     header('Location: .');
     exit();
@@ -124,6 +209,43 @@ if (isset($_POST['action']) and $_POST['action'] == 'Edit') {
     $email = $row['email'];
     $id = $row['id'];
     $button = 'Update author';
+
+    // Get list of roles assigned to this author
+    try {
+        $sql = 'SELECT roleid FROM authorrole WHERE authorid = :id';
+        $s = $pdo->prepare($sql);
+        $s->bindValue(':id', $id);
+        $s->execute();
+    }
+    catch (PDOException $e) {
+        print "Error!: " . $e->getMessage() . "<br/>";
+        $error = 'Error fetching list of assigned roles.';
+        include_once $docRoot . '/error.html.php';
+        exit();
+    }
+    
+    $selectedRoles = array();
+    foreach ($s as $row) {
+        $selectedRoles[] = $row['roleid'];
+    }
+
+    // Build the list of all roles
+    try {
+        $result = $pdo->query('SELECT id, description FROM role');
+    }
+    catch (PDOException $e) {
+        print "Error!: " . $e->getMessage() . "<br/>";
+        $error = 'Error fetching list of roles.';
+        include_once $docRoot . '/error.html.php';
+        exit();
+    }
+
+    foreach ($result as $row) {
+        $roles[] = array(
+            'id' => $row['id'],
+            'description' => $row['description'],
+            'selected' => in_array($row['id'], $selectedRoles));
+    }
     include 'form.html.php';
     exit();
 }
@@ -147,6 +269,59 @@ if (isset($_GET['editform'])) {
         $error = 'Error updating submitted author.';
         include_once $docRoot . '/error.html.php';
         exit();
+    }
+
+    if ($_POST['password'] != '') {
+        $password = md5($_POST['password'] . 'ijdb');
+        try {
+            $sql = 'UPDATE author SET
+                password = :password
+                WHERE id = :id';
+            $s = $pdo->prepare($sql);
+            $s->bindValue(':password', $password);
+            $s->bindValue(':id', $_POST['id']);
+            $s->execute();
+        }
+        catch (PDOException $e) {
+            print "Error!: " . $e->getMessage() . "<br/>";
+            $error = 'Error setting author password.';
+            include_once $docRoot . '/error.html.php';
+            exit();
+        }
+    }
+
+    //First delete all existing roles
+    try {
+        $sql = 'DELETE FROM authorrole WHERE authorid = :id';
+        $s = $pdo->prepare($sql);
+        $s->bindValue(':id', $_POST['id']);
+        $s->execute();
+    }
+    catch (PDOException $e) {
+        print "Error!: " . $e->getMessage() . "<br/>";
+        $error = 'Error removing obsolete author role entries.';
+        include_once $docRoot . '/error.html.php';
+        exit();
+    }
+    //Now add newly selected roles
+    if (isset($_POST['roles'])) {
+        foreach ($_POST['roles'] as $role) {
+            try {
+                $sql = 'INSERT INTO authorrole SET
+                    authorid = :authorid,
+                    roleid = :roleid';
+                $s = $pdo->prepare($sql);
+                $s->bindValue(':authorid', $_POST['id']);
+                $s->bindValue(':roleid', $role);
+                $s->execute();
+            }
+            catch (PDOException $e) {
+                print "Error!: " . $e->getMessage() . "<br/>";
+                $error = 'Error assigning selected role to author.';
+                include_once $docRoot . '/error.html.php';
+                exit();
+            }
+        }
     }
     header('Location: .');
     exit();

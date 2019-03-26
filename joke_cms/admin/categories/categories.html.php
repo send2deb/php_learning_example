@@ -25,5 +25,6 @@
         <?php endforeach; ?>
     </ul>
     <p><a href="..">Return to JMS Home Page</a></p>
+    <?php include '../../includes/logout.inc.html.php'; ?>
 </body>
 </html>
