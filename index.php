@@ -13,6 +13,7 @@
         <li><a href="joke_cms\admin">Jokes CMS</li>
         <li><a href="proj_vehicle">Vehicle Store</li>
         <li><a href="shoppingcart">Shopping Cart</li>
+        <li><a href="file_upload">File Upload</li>
     </ul>
 </body>
 </html>
